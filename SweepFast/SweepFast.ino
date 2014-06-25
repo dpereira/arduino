@@ -35,7 +35,7 @@ void setup()
 {
  attached = false; 
   pinMode(led, OUTPUT);     
-  Serial.begin(9600); 
+  Serial.begin(115200); 
 } 
   
 void loop() 
