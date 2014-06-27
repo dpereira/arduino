@@ -19,12 +19,20 @@ int led = 13;
 float voltageLevel = 0.0;
 float threshold = 5.0;
 
+
+// base values for arming the ESCs
 // motor 1 (soldered): base == 70
 // motor 2: base == 20
 // motor 3: base == 70
-int base1 = 70;
-int base2 = 20;
-int base3 = 45;
+int arming_bases[] = {70, 20, 45}; 
+int arm_base1 = arming_bases[0]; // arms A and C
+int arm_base2 = arming_bases[1]; // arms B
+int arm_base3 = arming_bases[2]; // arms D
+
+int throttling_bases[] = {70, 20, 46};
+int base1 = throttling_bases[0];
+int base2 = throttling_bases[1];
+int base3 = throttling_bases[2];
 
 // Set everything up
 void setup()
@@ -83,16 +91,7 @@ void loop()
         } else if(ch == 67) {
             incomingString = "";
             Serial.println("Cleared buffer");
-        } else if (incomingString == "arm") {
-            Serial.print("ARMING: M1 -> ");
-            Serial.print(base1);
-            Serial.print("M2 -> ");
-            Serial.println(base2);
-            myMotor1.write(base1);
-            myMotor2.write(base2);
-            myMotor3.write(base3);
-            incomingString = "";
-        }  else {
+        } else {
             // received a newline (linefeed) character
             // this means we are done making a string
             // print the incoming string
@@ -135,6 +134,19 @@ void loop()
             Serial.println(incomingString);
             incomingString = "";
         }
+
+        if (incomingString == "arm") {
+            Serial.print("ARMING: M1 -> ");
+            Serial.print(arm_base1);
+            Serial.print("M2 -> ");
+            Serial.println(arm_base2);
+            Serial.print("M3 -> ");
+            Serial.println(arm_base3);
+            myMotor1.write(arm_base1);
+            myMotor2.write(arm_base2);
+            myMotor3.write(arm_base3);
+            incomingString = "";
+        } 
     }
 
     ping();
