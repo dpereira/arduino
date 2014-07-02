@@ -21,13 +21,14 @@ float threshold = 5.0;
 // motor 1 (soldered): base == 70
 // motor 2: base == 20
 // motor 3: base == 70
-int arming_bases[] = {70, 20, 70, 45};
+int arming_bases[] = {25, 25, 25, 25};
 int arm_base0 = arming_bases[0]; // arms A
 int arm_base1 = arming_bases[1]; // arms C
 int arm_base2 = arming_bases[2]; // arms B
 int arm_base3 = arming_bases[3]; // arms D
 
-int throttling_bases[] = {70, 20, 70, 46};
+//int throttling_bases[] = {70, 20, 70, 46};
+int throttling_bases[] = {25, 25, 25, 25};
 int base0 = throttling_bases[0];
 int base1 = throttling_bases[1];
 int base2 = throttling_bases[2];
@@ -41,11 +42,14 @@ int D = 3;
 // Set everything up
 void setup()
 {
+    pinMode(led, OUTPUT);
+    digitalWrite(led, HIGH);
     // Put the motor to Arduino pin #9
     myMotor0.attach(3);
     myMotor1.attach(9);
     myMotor2.attach(5);
     myMotor3.attach(11);
+    digitalWrite(led, LOW);
 
     // Required for I/O from Serial monitor
     Serial.begin(9600);
@@ -53,20 +57,31 @@ void setup()
     echo("initializing");
     // initialize the digital pin as an output.
     echo("Ready");
-    pinMode(led, OUTPUT);
 
-    myMotor0.write(0);
-    myMotor1.write(0);
-    myMotor2.write(0);
-    myMotor3.write(0);
 }
 
 // This is the final output
 // written to the motor.
 static String incoming_string;
+static boolean zeroed = false;
 
 boolean process_command(char* output)
 {
+    if(!zeroed) {
+        digitalWrite(led, HIGH);
+    zeroed = true;
+    myMotor0.write(179);
+    myMotor1.write(179);
+    myMotor2.write(179);
+    myMotor3.write(179);
+    delay(3800);
+    myMotor0.write(25);
+      myMotor1.write(25);
+      myMotor2.write(25);
+      myMotor3.write(25);
+    digitalWrite(led, LOW);
+    }      
+
     boolean cmd_received = false;
     while(Serial.available() > 0) {
         // read the value
@@ -104,6 +119,7 @@ const int CMD_TYPE_SINGLE_LIFT= 3;
 const int CMD_TYPE_ALL_LIFT= 4;
 const int CMD_TYPE_CALIBRATE = 5;
 const int CMD_TYPE_FULL_STOP = 6;
+const int CMD_TYPE_RAW = 7;
 
 int command_type(String cmd) {
     cmd.toUpperCase();
