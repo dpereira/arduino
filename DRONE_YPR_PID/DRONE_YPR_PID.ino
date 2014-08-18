@@ -342,8 +342,8 @@ void engines_setup()
     pinMode(led, OUTPUT);
     digitalWrite(led, HIGH);
     // Put the motor to Arduino pin #9
-    myMotor0.attach(3);
-    myMotor1.attach(5);
+    myMotor0.attach(5);
+    myMotor1.attach(6);
     myMotor2.attach(9);
     myMotor3.attach(11);
     digitalWrite(led, LOW);
@@ -675,7 +675,16 @@ void pid_loop() {
     if (!dmpReady) return;
 
     // wait for MPU interrupt or extra packet(s) available
+    int timeout = millis() + 1000;
     while (!mpuInterrupt && fifoCount < packetSize) {
+      if(millis() > timeout) {
+          Serial.println("Stuck within the pid loop, resetting and bailing out.");
+          mpu.resetDMP();
+          mpu.reset();
+          delay(50);
+          pid_setup();
+          return;
+      }
         // other program behavior stuff here
         // .
         // .
