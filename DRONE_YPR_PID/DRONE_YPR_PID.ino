@@ -63,14 +63,22 @@ MPU6050 mpu;
 
 boolean started = false;
 
+//#define YAW_PID 2, 1, 2
+//#define PITCH_PID 2, 2, 1
+//#define ROLL_PID 2, 2, 1
+
+#define YAW_PID 1, 1, 1
+#define PITCH_PID 1, 1, 1
+#define ROLL_PID 1, 1, 1
+
 double yawInput, yawOutput, yawSetPoint;
-PID yawPID(&yawInput, &yawOutput, &yawSetPoint, 2, 5, 1, DIRECT);
+PID yawPID(&yawInput, &yawOutput, &yawSetPoint, YAW_PID, DIRECT);
 
 double pitchInput, pitchOutput, pitchSetPoint;
-PID pitchPID(&pitchInput, &pitchOutput, &pitchSetPoint, 2, 5, 1, DIRECT);
+PID pitchPID(&pitchInput, &pitchOutput, &pitchSetPoint, PITCH_PID, DIRECT);
 
 double rollInput, rollOutput, rollSetPoint;
-PID rollPID(&rollInput, &rollOutput, &rollSetPoint, 2, 5, 1, DIRECT);
+PID rollPID(&rollInput, &rollOutput, &rollSetPoint, ROLL_PID, DIRECT);
 
 //MPU6050 mpu(0x69); // <-- use for AD0 high
 
@@ -160,6 +168,7 @@ boolean stabilize = false;
 boolean ypr_steady = false;
 char cmd[128];
 int counter = 0;
+int sample_time = 10;
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -185,6 +194,36 @@ void setup() {
 }
 
 void pid_setup() {
+    pid_lib_setup();
+    mpu_setup();
+}
+
+void pid_lib_setup() {
+    yawSetPoint = yawInput;
+    pitchSetPoint = pitchInput;
+    rollSetPoint = rollInput;
+    yawOutput = 0;
+    pitchOutput = 0;
+    rollOutput = 0;
+    
+    yawPID = PID(&yawInput, &yawOutput, &yawSetPoint, YAW_PID, DIRECT);    
+    pitchPID = PID(&pitchInput, &pitchOutput, &pitchSetPoint, PITCH_PID, DIRECT);    
+    rollPID = PID(&rollInput, &rollOutput, &rollSetPoint, ROLL_PID, DIRECT);    
+    
+    yawPID.SetOutputLimits(-180, 180);
+    pitchPID.SetOutputLimits(-180, 180);
+    rollPID.SetOutputLimits(-180, 180);    
+    
+    yawPID.SetSampleTime(sample_time);
+    pitchPID.SetSampleTime(sample_time);
+    rollPID.SetSampleTime(sample_time);
+    
+    yawPID.SetMode(AUTOMATIC);
+    pitchPID.SetMode(AUTOMATIC);
+    rollPID.SetMode(AUTOMATIC);    
+}
+
+void mpu_setup() {
     // join I2C bus (I2Cdev library doesn't do this automatically)
     #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
         Wire.begin();
@@ -193,20 +232,6 @@ void pid_setup() {
         Fastwire::setup(400, true);
     #endif
     
-    yawSetPoint = 0;
-    pitchSetPoint = 0;
-    rollSetPoint = 0;
-    yawOutput = 0;
-    pitchOutput = 0;
-    rollOutput = 0;
-    
-    yawPID.SetOutputLimits(-180, 180);
-    pitchPID.SetOutputLimits(-180, 180);
-    rollPID.SetOutputLimits(-180, 180);    
-    
-    yawPID.SetMode(AUTOMATIC);
-    pitchPID.SetMode(AUTOMATIC);
-    rollPID.SetMode(AUTOMATIC);    
 
     // initialize serial communication
     // (115200 chosen because it is required for Teapot Demo output, but it's
@@ -308,6 +333,7 @@ int arm_base3 = arming_bases[3]; // arms D
 
 //int throttling_bases[] = {70, 20, 70, 46};
 int throttling_bases[] = {25, 25, 25, 25};
+int throttling_limits[] = {150, 150, 150, 150};
 int base0 = throttling_bases[0];
 int base1 = throttling_bases[1];
 int base2 = throttling_bases[2];
@@ -320,8 +346,21 @@ int D = 3;
 
 void delta_motor(int motor, int value) 
 {
-    current_throttle[motor] += value;
+    if(current_throttle[motor] + value > throttling_limits[motor]) { current_throttle[motor] = throttling_limits[motor]; }
+    else if (current_throttle[motor] < throttling_bases[motor]) { current_throttle[motor] = throttling_bases[motor]; }
+    else current_throttle[motor] += value;
     motors[motor].write(current_throttle[motor]);
+}
+
+int correction_limit = 20;
+
+void correct_motor(int motor, int correction_value) {
+    int actual_correction_value = correction_value;
+    if(actual_correction_value > correction_limit) { actual_correction_value = correction_limit; }
+    else if(actual_correction_value < -correction_limit) { actual_correction_value = - correction_limit; }
+    if(current_throttle[motor] + actual_correction_value > throttling_limits[motor]) { actual_correction_value = throttling_limits[motor]; }
+    else if (current_throttle[motor] < actual_correction_value) { actual_correction_value = throttling_bases[motor]; }  
+    motors[motor].write(current_throttle[motor] + correction_value + throttling_bases[motor]);
 }
 
 void set_motor(int motor, int value)
@@ -431,6 +470,8 @@ const int CMD_TYPE_PING = 10;
 const int CMD_TYPE_INIT_PID = 11;
 const int CMD_TYPE_DUMP_YPR = 12;
 const int CMD_TYPE_STABILIZE = 13;
+const int CMD_TYPE_RESET_SETPOINTS = 14;
+const int CMD_TYPE_READ_MOTOR_LEVELS = 15;
 
 int command_type(char* cmd) {
     //cmd.toUpperCase();
@@ -449,6 +490,10 @@ int command_type(char* cmd) {
         type = CMD_TYPE_ARM;
     } else if(strcmp(cmd, "ac") == 0) {
         type = CMD_TYPE_STABILIZE;
+    } else if(strcmp(cmd, "reset") == 0) {
+        type = CMD_TYPE_RESET_SETPOINTS;
+    } else if(strcmp(cmd, "rl") == 0) {
+        type = CMD_TYPE_READ_MOTOR_LEVELS;
     } else if(cmd[0] == 'c') {
         type = CMD_TYPE_CALIBRATE;
     } else if(cmd[0] == 'l') {
@@ -493,10 +538,12 @@ void do_dec(String cmd) {
 
 void do_full_stop(String(cmd)) {
     echo("FSTOP");
+    stabilize = false;
     set_motor(A, 0);
     set_motor(B, 0);
     set_motor(C, 0);
     set_motor(D, 0);
+    lock_gimbal_setpoints();
 }
 
 void do_arm(String cmd) {
@@ -590,6 +637,20 @@ void do_all_lift(String cmd, int type) {
     } 
 }
 
+int a_correction = 0, b_correction = 0, c_correction = 0, d_correction = 0;
+
+void read_motor_levels() {
+  Serial.print("Motor levels: A [");
+  Serial.print(current_throttle[A] + a_correction);
+  Serial.print("], B [");
+  Serial.print(current_throttle[B] + b_correction);  
+  Serial.print("], C [");
+  Serial.print(current_throttle[C] + c_correction);  
+  Serial.print("], D [");  
+  Serial.print(current_throttle[D] + d_correction);  
+  Serial.println("]");
+}
+
 void cmd_loop()
 {
     //int analogPin = 0;
@@ -602,6 +663,12 @@ void cmd_loop()
         int type = command_type(cmd);
         Serial.println(type);
         switch(type) {
+            case CMD_TYPE_RESET_SETPOINTS:
+              lock_gimbal_setpoints();
+              break;
+            case CMD_TYPE_READ_MOTOR_LEVELS:
+              read_motor_levels();
+              break;
             case CMD_TYPE_ARM: 
                 do_arm(cmd); 
                 break;
@@ -617,11 +684,26 @@ void cmd_loop()
             case CMD_TYPE_PING: ping(); break;
             case CMD_TYPE_INIT_PID: pid_setup(); break;
             case CMD_TYPE_DUMP_YPR: dumpYpr = !dumpYpr; break;
-            case CMD_TYPE_STABILIZE: stabilize = !stabilize; Serial.println(stabilize ? "ATTITUDE CONTROL ENABLED" : "ATTITUDE CONTROL DISABLED"); break;
+            case CMD_TYPE_STABILIZE: toggle_attitude_control(); break;
             default: do_nop(cmd); break;
         }
     }   
 
+}
+
+void lock_gimbal_setpoints() {
+  yawOutput = pitchOutput = rollOutput = 0;
+  yawSetPoint = yawInput;
+  pitchSetPoint = pitchInput;
+  rollSetPoint = rollInput;              
+}
+
+void toggle_attitude_control() {
+  stabilize = !stabilize; 
+  if(stabilize) {
+    lock_gimbal_setpoints();
+  }
+  Serial.println(stabilize ? "ATTITUDE CONTROL ENABLED" : "ATTITUDE CONTROL DISABLED");
 }
 
 void sendMessage(char* message) {
@@ -632,41 +714,11 @@ void sendMessage(char* message) {
   }
 }
 
-void ping()
-{
-  unsigned long currentTime = millis();
-  if((currentTime - time) > 1000) {
-     if(dumpYpr) {
-              Serial.print("ypr\t");
-              Serial.print(yawSetPoint - yawInput);
-              Serial.print(", ");
-              Serial.print(yawOutput);
-              Serial.print("\t");
-              Serial.print(pitchSetPoint - pitchInput);
-              Serial.print(", ");            
-              Serial.print(pitchOutput);
-              Serial.print("\t");
-              Serial.print(rollSetPoint - rollInput);
-              Serial.print(", ");            
-              Serial.println(rollOutput);            
-              //Serial.print(", ");            
-              //Serial.println(rollSetPoint);
-     } else {
-      Serial.println(".");
-     }    
-
-    time = currentTime;
-    digitalWrite(led, ledState % 2 ? HIGH: LOW);
-    ledState += 1;
-    currentTime = time;
-  }
-}
-
 
 // ================================================================
 // ===                    MAIN PROGRAM LOOP                     ===
 // ================================================================
-double previous_yaw = 180.0, previous_pitch  = 180.0, previous_roll = 180.0, ypr_steadiness_threshold = 0.01;
+double previous_yaw = 180.0, previous_pitch  = 180.0, previous_roll = 180.0, ypr_steadiness_threshold = 0.02;
 unsigned long previous_ypr_check = 0;
 int steady_seconds = 0;
 
@@ -679,10 +731,12 @@ void pid_loop() {
     while (!mpuInterrupt && fifoCount < packetSize) {
       if(millis() > timeout) {
           Serial.println("Stuck within the pid loop, resetting and bailing out.");
+          do_full_stop("");
           mpu.resetDMP();
-          mpu.reset();
+           mpu.reset();
           delay(50);
           pid_setup();
+          lock_gimbal_setpoints();
           return;
       }
         // other program behavior stuff here
@@ -749,9 +803,7 @@ void pid_loop() {
                   Serial.println("ALL GYROSCOPE GIMBALS STEADY: ready for takeoff.");
                   ypr_steady = true;
                   started = true;               
-                  yawSetPoint = yawInput;
-                  pitchSetPoint = pitchInput;
-                  rollSetPoint = rollInput;              
+                  lock_gimbal_setpoints();
                 }
               } else {
                 Serial.println("Reseting stability count.");
@@ -803,26 +855,87 @@ void pid_loop() {
 }
 
 int yaw_correction, pitch_correction, roll_correction;
+int total_y_correction = 0, total_p_correction = 0, total_r_correction = 0;
+int attitude_correction_interval = sample_time, latest_attitude_control_check = 0;
+int proportional_correction = 9.0;
+int proportional_yaw_correction = proportional_correction;
+int proportional_pitch_correction = 9.0;
+int proportional_roll_correction = 9.0;
 
 void attitude_control() {
-  // yaw > 0: rotating left (ccw)
-  yaw_correction = yawOutput / 9.0;
-  delta_motor(A, - yaw_correction);
-  delta_motor(D, - yaw_correction);
-  delta_motor(B, yaw_correction);
-  delta_motor(C, yaw_correction);
-  // pitch
-  pitch_correction = pitchOutput / 9.0;
-  delta_motor(A, -pitch_correction); 
-  delta_motor(B, -pitch_correction);
-  delta_motor(C, pitch_correction);
-  delta_motor(D, pitch_correction);  
-  // roll
-  roll_correction = roll_correction / 9.0;
-  delta_motor(A, -roll_correction);
-  delta_motor(C, -roll_correction);
-  delta_motor(B, roll_correction);
-  delta_motor(D, roll_correction);    
+  int current_time = millis();
+  if(current_time - latest_attitude_control_check > attitude_correction_interval) {
+    latest_attitude_control_check = current_time;
+    // yaw > 0: rotating left (ccw)
+    yaw_correction = yawOutput / proportional_correction;
+  /*  delta_motor(A, yaw_correction);
+    delta_motor(D, yaw_correction);
+    delta_motor(B, - yaw_correction);
+    delta_motor(C, - yaw_correction);*/
+    total_y_correction += yaw_correction;
+    // pitch
+    pitch_correction = pitchOutput / proportional_correction;
+  /*  delta_motor(A, pitch_correction); 
+    delta_motor(B, pitch_correction);
+    delta_motor(C, -pitch_correction);
+    delta_motor(D, -pitch_correction);  */
+    total_p_correction += pitch_correction;
+    // roll
+    roll_correction = rollOutput /  proportional_correction;
+    total_r_correction += roll_correction;    
+    a_correction = yaw_correction + pitch_correction +roll_correction;
+    c_correction = -yaw_correction - pitch_correction +roll_correction;
+    b_correction = -yaw_correction + pitch_correction - roll_correction;
+    d_correction = yaw_correction - pitch_correction - roll_correction;   
+    
+    correct_motor(A, a_correction);
+    correct_motor(C, c_correction);
+    correct_motor(B, b_correction);
+    correct_motor(D, d_correction);    
+    roll_correction = 0;
+    pitch_correction = 0;
+    yaw_correction = 0;
+  }
+}
+
+void ping()
+{
+  unsigned long currentTime = millis();
+  if((currentTime - time) > 1000) {
+     if(dumpYpr) {
+              Serial.print("ypr\t(");
+              Serial.print(yawSetPoint - yawInput);
+              Serial.print(", ");
+              Serial.print(yawOutput);
+              Serial.print(")\t(");
+              Serial.print(pitchSetPoint - pitchInput);
+              Serial.print(", ");            
+              Serial.print(pitchOutput);
+              Serial.print(")\t(");
+              Serial.print(rollSetPoint - rollInput);
+              Serial.print(", ");            
+              Serial.print(rollOutput);            
+              Serial.print("), ");
+              Serial.print("mlvls: A [");
+              Serial.print(current_throttle[A] + a_correction);
+              Serial.print("], B [");
+              Serial.print(current_throttle[B] + b_correction);  
+              Serial.print("], C [");
+              Serial.print(current_throttle[C] + c_correction);  
+              Serial.print("], D [");  
+              Serial.print(current_throttle[D] + d_correction);  
+              Serial.println("]");
+              //Serial.print(", ");            
+              //Serial.println(rollSetPoint);
+     } else {
+      Serial.println(".");
+     }    
+
+    time = currentTime;
+    digitalWrite(led, ledState % 2 ? HIGH: LOW);
+    ledState += 1;
+    currentTime = time;
+  }
 }
 
 void loop() {
