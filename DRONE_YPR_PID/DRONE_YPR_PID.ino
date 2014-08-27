@@ -67,9 +67,9 @@ boolean started = false;
 //#define PITCH_PID 2, 2, 1
 //#define ROLL_PID 2, 2, 1
 
-#define YAW_PID 1, 1, 1
-#define PITCH_PID 1, 1, 1
-#define ROLL_PID 1, 1, 1
+#define YAW_PID 5, 1, 1
+#define PITCH_PID 5, 1, 1
+#define ROLL_PID 5, 1, 1
 
 double yawInput, yawOutput, yawSetPoint;
 PID yawPID(&yawInput, &yawOutput, &yawSetPoint, YAW_PID, DIRECT);
@@ -210,9 +210,9 @@ void pid_lib_setup() {
     pitchPID = PID(&pitchInput, &pitchOutput, &pitchSetPoint, PITCH_PID, DIRECT);    
     rollPID = PID(&rollInput, &rollOutput, &rollSetPoint, ROLL_PID, DIRECT);    
     
-    yawPID.SetOutputLimits(-180, 180);
-    pitchPID.SetOutputLimits(-180, 180);
-    rollPID.SetOutputLimits(-180, 180);    
+    yawPID.SetOutputLimits(-15, 15);
+    pitchPID.SetOutputLimits(-4, 4);
+    rollPID.SetOutputLimits(-4, 4);    
     
     yawPID.SetSampleTime(sample_time);
     pitchPID.SetSampleTime(sample_time);
@@ -857,10 +857,10 @@ void pid_loop() {
 int yaw_correction, pitch_correction, roll_correction;
 int total_y_correction = 0, total_p_correction = 0, total_r_correction = 0;
 int attitude_correction_interval = sample_time, latest_attitude_control_check = 0;
-int proportional_correction = 9.0;
+int proportional_correction = 6;
 int proportional_yaw_correction = proportional_correction;
-int proportional_pitch_correction = 9.0;
-int proportional_roll_correction = 9.0;
+int proportional_pitch_correction = 1.0;
+int proportional_roll_correction = 1.0;
 
 void attitude_control() {
   int current_time = millis();
@@ -874,14 +874,14 @@ void attitude_control() {
     delta_motor(C, - yaw_correction);*/
     total_y_correction += yaw_correction;
     // pitch
-    pitch_correction = pitchOutput / proportional_correction;
+    pitch_correction = pitchOutput / proportional_pitch_correction;
   /*  delta_motor(A, pitch_correction); 
     delta_motor(B, pitch_correction);
     delta_motor(C, -pitch_correction);
     delta_motor(D, -pitch_correction);  */
     total_p_correction += pitch_correction;
     // roll
-    roll_correction = rollOutput /  proportional_correction;
+    roll_correction = rollOutput /  proportional_roll_correction;
     total_r_correction += roll_correction;    
     a_correction = yaw_correction + pitch_correction +roll_correction;
     c_correction = -yaw_correction - pitch_correction +roll_correction;
@@ -903,28 +903,26 @@ void ping()
   unsigned long currentTime = millis();
   if((currentTime - time) > 1000) {
      if(dumpYpr) {
-              Serial.print("ypr\t(");
+              Serial.print("> ");/*
               Serial.print(yawSetPoint - yawInput);
               Serial.print(", ");
-              Serial.print(yawOutput);
-              Serial.print(")\t(");
-              Serial.print(pitchSetPoint - pitchInput);
-              Serial.print(", ");            
-              Serial.print(pitchOutput);
-              Serial.print(")\t(");
+              Serial.print(pitchSetPoint - pitchInput);              
+              Serial.print(", ");                          
               Serial.print(rollSetPoint - rollInput);
+              Serial.print(", ");   */                  
+              Serial.print(yawOutput);
+              Serial.print(", ");                     
+              Serial.print(pitchOutput);
               Serial.print(", ");            
               Serial.print(rollOutput);            
-              Serial.print("), ");
-              Serial.print("mlvls: A [");
+              Serial.print(", ");       
               Serial.print(current_throttle[A] + a_correction);
-              Serial.print("], B [");
+              Serial.print(", ");                   
               Serial.print(current_throttle[B] + b_correction);  
-              Serial.print("], C [");
+              Serial.print(", ");                   
               Serial.print(current_throttle[C] + c_correction);  
-              Serial.print("], D [");  
-              Serial.print(current_throttle[D] + d_correction);  
-              Serial.println("]");
+              Serial.print(", ");                   
+              Serial.println(current_throttle[D] + d_correction);  
               //Serial.print(", ");            
               //Serial.println(rollSetPoint);
      } else {
